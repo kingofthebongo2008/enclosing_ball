@@ -112,7 +112,7 @@ static ComPtr<ID3D11RasterizerState2> CreateRasterizerState(ID3D11Device3* devic
     D3D11_RASTERIZER_DESC2 state = {};
 
     state.FillMode              = D3D11_FILL_SOLID;
-    state.CullMode              = D3D11_CULL_NONE;
+    state.CullMode              = D3D11_CULL_BACK;
     state.FrontCounterClockwise = TRUE;
     state.DepthClipEnable       = TRUE;
     state.ScissorEnable         = TRUE;
@@ -136,7 +136,7 @@ static ComPtr<ID3D11DepthStencilState> CreateDepthStencilState(ID3D11Device3* de
     ComPtr<ID3D11DepthStencilState> r;
 
     D3D11_DEPTH_STENCIL_DESC state = {};
-    state.DepthEnable = FALSE;
+    state.DepthEnable = TRUE;
     state.DepthFunc = D3D11_COMPARISON_LESS;
     ThrowIfFailed(device->CreateDepthStencilState(&state, r.GetAddressOf()));
     return r;
@@ -219,9 +219,14 @@ class ViewProvider : public winrt::implements<ViewProvider, IFrameworkView, IFra
                 }
 
                 {
-                    m_device_context->Draw(3, 0);
+                    static const int subdivision_count = 20;
+                    static const int vertical_segments = subdivision_count;
+                    static const int horizontal_segments = subdivision_count * 2;
+                    static const int vertex_count        = (vertical_segments + 1) * (horizontal_segments + 1);
+                    static const int index_count         = vertex_count * 3;
+
+                    m_device_context->Draw(index_count, 0);
                 }
-                
             }
             m_swap_chain->Present(0, 0);
         }
