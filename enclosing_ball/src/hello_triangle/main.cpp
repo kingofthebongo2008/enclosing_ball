@@ -283,7 +283,7 @@ void ViewProvider::Run()
             m_device_context->ClearState();
 
             {
-                float clear_value[4] = { 1.0f, 0.0f, 0.0f, 0.0f };
+                float clear_value[4] = { 0.2f, 0.2f, 0.2f, 0.0f };
                 m_device_context->ClearRenderTargetView(m_swap_chain_view.Get(), clear_value);
             }
           
