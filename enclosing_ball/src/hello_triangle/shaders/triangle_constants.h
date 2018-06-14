@@ -1,3 +1,6 @@
+#ifndef __triangle_constants__
+#define __triangle_constants__
+
 #if defined(__cplusplus)
 
 #include <DirectXMath.h>
@@ -42,8 +45,14 @@ float get_sphere_radius(sphere_constants s)
     return s.m_sphere_radius.x;
 }
 
-float get_sphere_subdivision_count(sphere_constants s )
+int get_sphere_subdivision_count(sphere_constants s )
 {
     return s.m_subdivision_count.x;
 }
 
+//todo: move this out
+static const float pi = 3.141592654f;
+static const float two_pi = 6.283185307f;
+static const float pi_div_two = 1.570796327f;
+
+#endif
