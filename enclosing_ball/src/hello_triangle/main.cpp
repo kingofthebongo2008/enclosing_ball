@@ -14,6 +14,7 @@
 #include <winrt/Windows.UI.ViewManagement.h>
 
 #include <triangle_vertex.h>
+#include <triangle_vertex_instanced.h>
 #include <triangle_pixel.h>
 
 #include <triangle_constants.h>
@@ -117,6 +118,13 @@ static ComPtr<ID3D11VertexShader> CreateTriangleVertexShader(ID3D11Device5* devi
     return r;
 }
 
+static ComPtr<ID3D11VertexShader> CreateTriangleVertexInstancedShader(ID3D11Device5* device)
+{
+    ComPtr<ID3D11VertexShader> r;
+    ThrowIfFailed(device->CreateVertexShader(g_triangle_vertex_instanced, sizeof(g_triangle_vertex_instanced), nullptr, r.GetAddressOf()));
+    return r;
+}
+
 static ComPtr<ID3D11PixelShader> CreateTrianglePixelShader(ID3D11Device5* device)
 {
     ComPtr<ID3D11PixelShader> r;
@@ -204,6 +212,7 @@ class ViewProvider : public winrt::implements<ViewProvider, IFrameworkView, IFra
     ComPtr<IDXGISwapChain1>                     m_swap_chain;
 
     ComPtr<ID3D11VertexShader>                  m_triangle_vertex;
+    ComPtr<ID3D11VertexShader>                  m_triangle_vertex_instanced;
     ComPtr<ID3D11PixelShader>                   m_triangle_pixel;
     ComPtr<ID3D11RasterizerState2>              m_rasterizer_state;
     ComPtr<ID3D11BlendState1>                   m_blend_state;
@@ -327,6 +336,7 @@ void ViewProvider::Run()
                 frame_constants*  v0                            = reinterpret_cast<frame_constants*> (AllocateFrameConstant(sizeof(frame_constants)));
                 sphere_constants* v1                            = reinterpret_cast<sphere_constants*> (AllocateFrameConstant(sizeof(sphere_constants)));
                 object_constants* v2                            = reinterpret_cast<object_constants*> (AllocateFrameConstant(sizeof(object_constants)));
+                spheres*          v3                            = reinterpret_cast<spheres*> (AllocateFrameConstant(sizeof(spheres)));
 
                 const float PI                                  = 3.14159265358979323846264338327950288;
                 float aspect_ratio                              = static_cast<float>(m_back_buffer_width) / static_cast<float>(m_back_buffer_height);
@@ -352,29 +362,70 @@ void ViewProvider::Run()
 
                 UploadFrameConstants(m_device_context.Get(), m_frame_counter);
 
-                ID3D11Buffer* buffers[] =
                 {
-                    m_frame_constants[m_frame_counter].Get(),
-                    m_frame_constants[m_frame_counter].Get(),
-                    m_frame_constants[m_frame_counter].Get()
-                };
+                    ID3D11Buffer* buffers[] =
+                    {
+                        m_frame_constants[m_frame_counter].Get(),
+                        m_frame_constants[m_frame_counter].Get(),
+                        m_frame_constants[m_frame_counter].Get()
+                    };
 
-                uint32_t offsets[] =
+                    uint32_t offsets[] =
+                    {
+                        FrameConstantOffset(v0),
+                        FrameConstantOffset(v1),
+                        FrameConstantOffset(v2),
+                    };
+
+                    uint32_t counts[] =
+                    {
+                        FrameConstantSize(sizeof(frame_constants)),
+                        FrameConstantSize(sizeof(sphere_constants)),
+                        FrameConstantSize(sizeof(object_constants)),
+                    };
+
+                    m_device_context->VSSetConstantBuffers1(0, 3, buffers, &offsets[0], &counts[0]);
+                    m_device_context->Draw(index_count, 0);
+                }
+
                 {
-                    FrameConstantOffset(v0),
-                    FrameConstantOffset(v1),
-                    FrameConstantOffset(v2),
-                };
+                    m_device_context->VSSetShader(m_triangle_vertex_instanced.Get(), nullptr, 0);
+                    
+                    float x[3]      = { -10.2f, 0.2f,   0.1f };
+                    float y[3]      = { 3.f,    5.2f,   0.2f };
+                    float z[3]      = { 5.f,    12.2f,  0.5f };
+                    float radius[3] = { 0.2f,   0.6f,   0.3f };
 
-                uint32_t counts[] =
-                {
-                    FrameConstantSize(sizeof(frame_constants)),
-                    FrameConstantSize(sizeof(sphere_constants)),
-                    FrameConstantSize(sizeof(object_constants)),
-                };
+                    for (auto i = 0U; i < 3; ++i)
+                    {
+                        DirectX::XMVECTOR   sphere = DirectX::XMVectorSet(x[i], y[i], z[i], radius[i]);
+                        DirectX::XMStoreFloat4A(&v3->m_spheres[i], sphere);
+                    }
 
-                m_device_context->VSSetConstantBuffers1(0, 3, buffers, &offsets[0], &counts[0]);
-                m_device_context->Draw(index_count, 0);
+                    ID3D11Buffer* buffers[] =
+                    {
+                        m_frame_constants[m_frame_counter].Get(),
+                        m_frame_constants[m_frame_counter].Get(),
+                        m_frame_constants[m_frame_counter].Get()
+                    };
+
+                    uint32_t offsets[] =
+                    {
+                        FrameConstantOffset(v0),
+                        FrameConstantOffset(v1),
+                        FrameConstantOffset(v3),
+                    };
+
+                    uint32_t counts[] =
+                    {
+                        FrameConstantSize(sizeof(frame_constants)),
+                        FrameConstantSize(sizeof(sphere_constants)),
+                        FrameConstantSize(sizeof(spheres)),
+                    };
+
+                    m_device_context->VSSetConstantBuffers1(0, 3, buffers, &offsets[0], &counts[0]);
+                    m_device_context->DrawInstanced(index_count, 3, 0, 0);
+                }
             }
         }
 
@@ -390,6 +441,7 @@ void ViewProvider::Load(winrt::hstring h)
 {
     m_triangle_vertex = CreateTriangleVertexShader(m_device.Get());
     m_triangle_pixel = CreateTrianglePixelShader(m_device.Get());
+    m_triangle_vertex_instanced = CreateTriangleVertexInstancedShader(m_device.Get());
 
     m_blend_state = CreateBlendState(m_device.Get());
     m_rasterizer_state = CreateRasterizerState(m_device.Get());

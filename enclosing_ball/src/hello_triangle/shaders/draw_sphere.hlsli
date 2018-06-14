@@ -4,11 +4,8 @@
 #include "triangle_constants.h"
 
 
-float4 compute_sphere_position(sphere_constants sphere, uint v)
+float4 compute_sphere_position(float radius, int subdivision_count, uint v)
 {
-    const float radius              = get_sphere_radius(sphere);
-    const int subdivision_count     = get_sphere_subdivision_count(sphere);
-
     const int vertical_segments     = subdivision_count;
     const int horizontal_segments   = subdivision_count * 2;
     const int vertex_count          = (vertical_segments + 1) * (horizontal_segments + 1);
