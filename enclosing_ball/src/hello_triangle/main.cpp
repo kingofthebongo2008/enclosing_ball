@@ -1,9 +1,11 @@
 #include "pch.h"
 #include <cstdint>
 
-#include <d3d11_3.h>
+#include <d3d11_4.h>
 #include <dxgi1_5.h>
 #include <wrl/client.h>
+
+#include <DirectXMath.h>
 
 #include <winrt/base.h>
 #include <winrt/Windows.UI.Core.h>
@@ -19,6 +21,18 @@ using namespace winrt::Windows::UI::Core;
 using namespace winrt::Windows::ApplicationModel::Core;
 using namespace winrt::Windows::ApplicationModel::Activation;
 using namespace Microsoft::WRL;
+
+
+static uint32_t align16(uint32_t v)
+{
+    return (v + 15) & (~15);
+}
+
+static uint32_t align256(uint32_t v)
+{
+    return (v + 255) & (~255);
+}
+
 
 struct exception : public std::exception
 {
@@ -38,22 +52,26 @@ inline void ThrowIfFailed(HRESULT hr)
     }
 }
 
-static ComPtr<ID3D11Device3> CreateDevice()
+static ComPtr<ID3D11Device5> CreateDevice()
 {
     ComPtr<ID3D11Device> r;
     D3D_FEATURE_LEVEL levels[]{ D3D_FEATURE_LEVEL_11_0 };
     ThrowIfFailed(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_DEBUG, &levels[0], 1, D3D11_SDK_VERSION, r.GetAddressOf(), nullptr, nullptr));
 
-    ComPtr<ID3D11Device3> r0;
+    ComPtr<ID3D11Device5> r0;
     ThrowIfFailed(r.As(&r0));
     return r0;
 }
 
-static ComPtr<ID3D11DeviceContext> CreateImmediateContext(ID3D11Device* d )
+static ComPtr<ID3D11DeviceContext4> CreateImmediateContext(ID3D11Device* d )
 {
     ComPtr<ID3D11DeviceContext> r;
     d->GetImmediateContext(r.GetAddressOf());
-    return r;
+
+    ComPtr<ID3D11DeviceContext4> r0;
+    ThrowIfFailed(r.As(&r0));
+
+    return r0;
 }
 
 static ComPtr<IDXGISwapChain1> CreateSwapChain(const CoreWindow& w, ID3D11Device* d)
@@ -80,7 +98,7 @@ static ComPtr<IDXGISwapChain1> CreateSwapChain(const CoreWindow& w, ID3D11Device
     return r;
 }
 
-static ComPtr<ID3D11RenderTargetView1> CreateSwapChainView(IDXGISwapChain1* swap_chain, ID3D11Device3* device)
+static ComPtr<ID3D11RenderTargetView1> CreateSwapChainView(IDXGISwapChain1* swap_chain, ID3D11Device5* device)
 {
     ComPtr<ID3D11Texture2D> texture;
 
@@ -91,21 +109,21 @@ static ComPtr<ID3D11RenderTargetView1> CreateSwapChainView(IDXGISwapChain1* swap
     return r;
 }
 
-static ComPtr<ID3D11VertexShader> CreateTriangleVertexShader(ID3D11Device3* device)
+static ComPtr<ID3D11VertexShader> CreateTriangleVertexShader(ID3D11Device5* device)
 {
     ComPtr<ID3D11VertexShader> r;
     ThrowIfFailed(device->CreateVertexShader(g_triangle_vertex, sizeof(g_triangle_vertex), nullptr, r.GetAddressOf()));
     return r;
 }
 
-static ComPtr<ID3D11PixelShader> CreateTrianglePixelShader(ID3D11Device3* device)
+static ComPtr<ID3D11PixelShader> CreateTrianglePixelShader(ID3D11Device5* device)
 {
     ComPtr<ID3D11PixelShader> r;
     ThrowIfFailed(device->CreatePixelShader(g_triangle_pixel, sizeof(g_triangle_pixel), nullptr, r.GetAddressOf()));
     return r;
 }
 
-static ComPtr<ID3D11RasterizerState2> CreateRasterizerState(ID3D11Device3* device)
+static ComPtr<ID3D11RasterizerState2> CreateRasterizerState(ID3D11Device5* device)
 {
     ComPtr<ID3D11RasterizerState2> r;
 
@@ -121,7 +139,7 @@ static ComPtr<ID3D11RasterizerState2> CreateRasterizerState(ID3D11Device3* devic
     return r;
 }
 
-static ComPtr<ID3D11BlendState1> CreateBlendState(ID3D11Device3* device)
+static ComPtr<ID3D11BlendState1> CreateBlendState(ID3D11Device5* device)
 {
     ComPtr<ID3D11BlendState1> r;
 
@@ -131,7 +149,7 @@ static ComPtr<ID3D11BlendState1> CreateBlendState(ID3D11Device3* device)
     return r;
 }
 
-static ComPtr<ID3D11DepthStencilState> CreateDepthStencilState(ID3D11Device3* device)
+static ComPtr<ID3D11DepthStencilState> CreateDepthStencilState(ID3D11Device5* device)
 {
     ComPtr<ID3D11DepthStencilState> r;
 
@@ -142,142 +160,46 @@ static ComPtr<ID3D11DepthStencilState> CreateDepthStencilState(ID3D11Device3* de
     return r;
 }
 
+static ComPtr<ID3D11Buffer> CreateFrameConstantsBuffer(ID3D11Device5* device, uint32_t size)
+{
+    ComPtr<ID3D11Buffer> r;
+
+    D3D11_BUFFER_DESC state     = {};
+    state.ByteWidth             = align256(size);
+    state.Usage                 = D3D11_USAGE_DYNAMIC;
+    state.BindFlags             = D3D11_BIND_CONSTANT_BUFFER;
+    state.CPUAccessFlags        = D3D11_CPU_ACCESS_WRITE;
+    state.MiscFlags             = 0;
+    state.StructureByteStride   = 0;
+
+    
+    ThrowIfFailed(device->CreateBuffer(&state, nullptr, r.GetAddressOf()));
+
+    return r;
+}
+
 class ViewProvider : public winrt::implements<ViewProvider, IFrameworkView, IFrameworkViewSource>
 {
     public:
 
-    IFrameworkView CreateView()
-    {
-            return *this;
-    }
+    IFrameworkView CreateView();
+    void Initialize(const CoreApplicationView& v);
+    void Uninitialize();
+    void Run();
 
-    void Initialize(const CoreApplicationView& v)
-    {
-        m_activated         = v.Activated(winrt::auto_revoke, { this, &ViewProvider::OnActivated });
-        m_device            = CreateDevice();
-        m_device_context    = CreateImmediateContext(m_device.Get());
-    }
-
-    void Uninitialize() 
-    {
-
-    }
-
-    void Run()
-    {
-        while (m_window_running)
-        {
-            CoreWindow::GetForCurrentThread().Dispatcher().ProcessEvents(CoreProcessEventsOption::ProcessAllIfPresent);
-
-            {
-                ComPtr<ID3D11RenderTargetView1> m_swap_chain_view = CreateSwapChainView(m_swap_chain.Get(), m_device.Get());
-
-                m_device_context->ClearState();
-
-                {
-                    float clear_value[4] = { 1.0f, 0.0f, 0.0f, 0.0f };
-                    m_device_context->ClearRenderTargetView(m_swap_chain_view.Get(), clear_value);
-                }
-
-                {
-                    ID3D11RenderTargetView* views[1] = { m_swap_chain_view.Get() };
-                    m_device_context->OMSetRenderTargets(1, views, nullptr);
-                    m_device_context->OMSetDepthStencilState(m_depth_stencil_state.Get(), 0);
-                }
-
-                {
-                    m_device_context->OMSetBlendState(m_blend_state.Get(), nullptr, 0xFFFFFFFF);
-                }
-
-                {
-                    m_device_context->RSSetState(m_rasterizer_state.Get());
-
-                    D3D11_RECT r = { 0, 0, m_back_buffer_width, m_back_buffer_height };
-                    m_device_context->RSSetScissorRects(1, &r);
-                    
-
-                    D3D11_VIEWPORT v;
-                    v.TopLeftX = 0;
-                    v.TopLeftY = 0;
-                    v.MinDepth = 0.0f;
-                    v.MaxDepth = 1.0f;
-                    v.Width = static_cast<float>(m_back_buffer_width);
-                    v.Height = static_cast<float>(m_back_buffer_height);
-
-                    m_device_context->RSSetViewports(1, &v);
-                }
-
-                {
-                    m_device_context->VSSetShader(m_triangle_vertex.Get(), nullptr, 0);
-                }
-
-                {
-                    m_device_context->PSSetShader(m_triangle_pixel.Get(), nullptr, 0);
-                }
-                {
-                    m_device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                }
-
-                {
-                    static const int subdivision_count = 20;
-                    static const int vertical_segments = subdivision_count;
-                    static const int horizontal_segments = subdivision_count * 2;
-                    static const int vertex_count        = (vertical_segments + 1) * (horizontal_segments + 1);
-                    static const int index_count         = vertex_count * 3;
-
-                    m_device_context->Draw(index_count, 0);
-                }
-            }
-            m_swap_chain->Present(0, 0);
-        }
-    }
-
-    void Load(winrt::hstring h)
-    {
-        m_triangle_vertex = CreateTriangleVertexShader(m_device.Get());
-        m_triangle_pixel = CreateTrianglePixelShader(m_device.Get());
-
-        m_blend_state = CreateBlendState(m_device.Get());
-        m_rasterizer_state = CreateRasterizerState(m_device.Get());
-        m_depth_stencil_state = CreateDepthStencilState(m_device.Get());
-    }
-
-    void SetWindow(const CoreWindow& w)
-    {
-        m_closed            = w.Closed(winrt::auto_revoke, { this, &ViewProvider::OnWindowClosed });
-        m_size_changed      = w.SizeChanged(winrt::auto_revoke, { this, &ViewProvider::OnWindowSizeChanged });
-
-        m_swap_chain        = CreateSwapChain(w, m_device.Get());
-
-        m_back_buffer_width = static_cast<UINT>(w.Bounds().Width);
-        m_back_buffer_height = static_cast<UINT>(w.Bounds().Height);
-    }
-
-    void OnWindowClosed(const CoreWindow&w, const CoreWindowEventArgs& a)
-    {
-        m_window_running = false;
-    }
-
-    void OnActivated(const CoreApplicationView&, const IActivatedEventArgs&)
-    {
-        CoreWindow::GetForCurrentThread().Activate();
-    }
-
-    void OnWindowSizeChanged(const CoreWindow& w, const WindowSizeChangedEventArgs& a)
-    {
-        ThrowIfFailed(m_swap_chain->ResizeBuffers(3, static_cast<UINT>(a.Size().Width), static_cast<UINT>(a.Size().Height), DXGI_FORMAT_R8G8B8A8_UNORM, 0));
-
-        m_back_buffer_width = static_cast<UINT>(a.Size().Width);
-        m_back_buffer_height = static_cast<UINT>(a.Size().Height);
-    }
+    void Load(winrt::hstring h);
+    void SetWindow(const CoreWindow& w);
+    void OnWindowClosed(const CoreWindow&w, const CoreWindowEventArgs& a);
+    void OnActivated(const CoreApplicationView&, const IActivatedEventArgs&);
+    void OnWindowSizeChanged(const CoreWindow& w, const WindowSizeChangedEventArgs& a);
 
     bool m_window_running = true;
     CoreWindow::Closed_revoker                  m_closed;
     CoreWindow::SizeChanged_revoker             m_size_changed;
     CoreApplicationView::Activated_revoker      m_activated;
     
-    ComPtr<ID3D11Device3>                       m_device;
-    ComPtr<ID3D11DeviceContext>                 m_device_context;
+    ComPtr<ID3D11Device5>                       m_device;
+    ComPtr<ID3D11DeviceContext4>                m_device_context;
     ComPtr<IDXGISwapChain1>                     m_swap_chain;
 
     ComPtr<ID3D11VertexShader>                  m_triangle_vertex;
@@ -286,9 +208,236 @@ class ViewProvider : public winrt::implements<ViewProvider, IFrameworkView, IFra
     ComPtr<ID3D11BlendState1>                   m_blend_state;
     ComPtr<ID3D11DepthStencilState>             m_depth_stencil_state;
 
+    std::array<ComPtr<ID3D11Buffer>, 3 >        m_frame_constants;
+    std::array< std::vector< uint8_t>, 3>       m_frame_constants_shadow;
+
     uint32_t                                    m_back_buffer_width = 0;
     uint32_t                                    m_back_buffer_height = 0;
+    uint32_t                                    m_frame_counter = 0;
+    uint32_t                                    m_frame_pointer = 0;
+
+    const uint32_t                              m_frame_constants_size = 512;
+
+    void                                        UploadFrameConstants(ID3D11DeviceContext* ctx, uint32_t frame_counter);
+    void*                                       AllocateFrameConstant(uint32_t size);
+    uint32_t                                    OffsetFrameConstant(const void* a);
 };
+
+void* ViewProvider::AllocateFrameConstant(uint32_t size)
+{
+    void* r = &m_frame_constants_shadow[m_frame_counter][m_frame_pointer];
+    m_frame_pointer += align256(size);
+    return r;
+}
+
+uint32_t ViewProvider::OffsetFrameConstant(const void* a)
+{
+    auto e = reinterpret_cast<const uint8_t*>(a);
+    auto b = reinterpret_cast<const uint8_t*>(&m_frame_constants_shadow[m_frame_counter][0]);
+
+    return (e - b) / 16;
+}
+
+IFrameworkView ViewProvider::CreateView()
+{
+    return *this;
+}
+
+void ViewProvider::Initialize(const CoreApplicationView& v)
+{
+    m_activated = v.Activated(winrt::auto_revoke, { this, &ViewProvider::OnActivated });
+    m_device = CreateDevice();
+    m_device_context = CreateImmediateContext(m_device.Get());
+}
+
+void ViewProvider::Uninitialize()
+{
+
+}
+
+struct frame_constants
+{
+    DirectX::XMFLOAT4X4A    m_view;
+    DirectX::XMFLOAT4X4A    m_perspective;
+};
+
+struct sphere_constants
+{
+    DirectX::XMFLOAT4A      m_sphere_radius;
+    DirectX::XMINT4         m_subdivision_count;
+};
+
+void ViewProvider::Run()
+{
+    while (m_window_running)
+    {
+        CoreWindow::GetForCurrentThread().Dispatcher().ProcessEvents(CoreProcessEventsOption::ProcessAllIfPresent);
+
+        {
+            ComPtr<ID3D11RenderTargetView1> m_swap_chain_view = CreateSwapChainView(m_swap_chain.Get(), m_device.Get());
+
+            m_device_context->ClearState();
+
+            {
+                float clear_value[4] = { 1.0f, 0.0f, 0.0f, 0.0f };
+                m_device_context->ClearRenderTargetView(m_swap_chain_view.Get(), clear_value);
+            }
+
+            {
+                ID3D11RenderTargetView* views[1] = { m_swap_chain_view.Get() };
+                m_device_context->OMSetRenderTargets(1, views, nullptr);
+                m_device_context->OMSetDepthStencilState(m_depth_stencil_state.Get(), 0);
+            }
+
+            {
+                m_device_context->OMSetBlendState(m_blend_state.Get(), nullptr, 0xFFFFFFFF);
+            }
+
+            {
+                m_device_context->RSSetState(m_rasterizer_state.Get());
+
+                D3D11_RECT r = { 0, 0, m_back_buffer_width, m_back_buffer_height };
+                m_device_context->RSSetScissorRects(1, &r);
+
+
+                D3D11_VIEWPORT v;
+                v.TopLeftX = 0;
+                v.TopLeftY = 0;
+                v.MinDepth = 0.0f;
+                v.MaxDepth = 1.0f;
+                v.Width = static_cast<float>(m_back_buffer_width);
+                v.Height = static_cast<float>(m_back_buffer_height);
+
+                m_device_context->RSSetViewports(1, &v);
+            }
+
+            {
+                m_device_context->VSSetShader(m_triangle_vertex.Get(), nullptr, 0);
+            }
+            {
+                m_device_context->PSSetShader(m_triangle_pixel.Get(), nullptr, 0);
+            }
+            {
+                m_device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_POINTLIST);
+            }
+
+            {
+                const int subdivision_count = 40 + 1;
+                const int vertical_segments = subdivision_count;
+                const int horizontal_segments = subdivision_count * 2;
+                const int vertex_count = (vertical_segments + 1) * (horizontal_segments + 1);
+                const int index_count = vertex_count * 3;
+
+                frame_constants*  v0 = reinterpret_cast<frame_constants*> (AllocateFrameConstant(sizeof(frame_constants)));
+                sphere_constants* v1 = reinterpret_cast<sphere_constants*> (AllocateFrameConstant(sizeof(sphere_constants)));
+
+                DirectX::XMMATRIX perspective   = DirectX::XMMatrixIdentity();
+                DirectX::XMMATRIX view          = DirectX::XMMatrixIdentity();
+
+                DirectX::XMStoreFloat4x4A(&v0->m_perspective, perspective);
+                DirectX::XMStoreFloat4x4A(&v0->m_view, view);
+
+                DirectX::XMVECTOR   sphere      = DirectX::XMVectorSet(0.2f, 0.0f, 0.0f, 0.0f);
+                DirectX::XMVECTOR   subs        = DirectX::XMVectorSetInt(subdivision_count, 0, 0, 0);
+
+                DirectX::XMStoreFloat4A(&v1->m_sphere_radius, sphere);
+                DirectX::XMStoreInt4A(reinterpret_cast<uint32_t*>(&v1->m_subdivision_count), subs);
+
+                UploadFrameConstants(m_device_context.Get(), m_frame_counter);
+
+                ID3D11Buffer* buffers[] =
+                {
+                    m_frame_constants[m_frame_counter].Get(),
+                    m_frame_constants[m_frame_counter].Get()
+                };
+
+                uint32_t offsets[] =
+                {
+                    OffsetFrameConstant(v0),
+                    OffsetFrameConstant(v1),
+                };
+
+                uint32_t counts[] =
+                {
+                    align16(8),
+                    align16(2)
+                };
+
+
+                m_device_context->VSSetConstantBuffers1(0, 2, buffers, &offsets[0], &counts[0]);
+                m_device_context->Draw(index_count, 0);
+            }
+        }
+
+        m_swap_chain->Present(0, 0);
+
+        m_frame_counter = m_frame_counter + 1;
+        m_frame_counter %= 3;
+        m_frame_pointer = 0;
+    }
+}
+
+void ViewProvider::Load(winrt::hstring h)
+{
+    m_triangle_vertex = CreateTriangleVertexShader(m_device.Get());
+    m_triangle_pixel = CreateTrianglePixelShader(m_device.Get());
+
+    m_blend_state = CreateBlendState(m_device.Get());
+    m_rasterizer_state = CreateRasterizerState(m_device.Get());
+    m_depth_stencil_state = CreateDepthStencilState(m_device.Get());
+
+    m_frame_constants[0] = CreateFrameConstantsBuffer(m_device.Get(), 512);
+    m_frame_constants[1] = CreateFrameConstantsBuffer(m_device.Get(), 512);
+    m_frame_constants[2] = CreateFrameConstantsBuffer(m_device.Get(), 512);
+
+    m_frame_constants_shadow[0] = std::vector<uint8_t>(512);
+    m_frame_constants_shadow[1] = std::vector<uint8_t>(512);
+    m_frame_constants_shadow[2] = std::vector<uint8_t>(512);
+
+    m_frame_counter = 0;
+}
+
+void ViewProvider::SetWindow(const CoreWindow& w)
+{
+    m_closed = w.Closed(winrt::auto_revoke, { this, &ViewProvider::OnWindowClosed });
+    m_size_changed = w.SizeChanged(winrt::auto_revoke, { this, &ViewProvider::OnWindowSizeChanged });
+
+    m_swap_chain = CreateSwapChain(w, m_device.Get());
+
+    m_back_buffer_width = static_cast<UINT>(w.Bounds().Width);
+    m_back_buffer_height = static_cast<UINT>(w.Bounds().Height);
+}
+
+void ViewProvider::OnWindowClosed(const CoreWindow&w, const CoreWindowEventArgs& a)
+{
+    m_window_running = false;
+}
+
+void ViewProvider::OnActivated(const CoreApplicationView&, const IActivatedEventArgs&)
+{
+    CoreWindow::GetForCurrentThread().Activate();
+}
+
+void ViewProvider::OnWindowSizeChanged(const CoreWindow& w, const WindowSizeChangedEventArgs& a)
+{
+    ThrowIfFailed(m_swap_chain->ResizeBuffers(3, static_cast<UINT>(a.Size().Width), static_cast<UINT>(a.Size().Height), DXGI_FORMAT_R8G8B8A8_UNORM, 0));
+
+    m_back_buffer_width = static_cast<UINT>(a.Size().Width);
+    m_back_buffer_height = static_cast<UINT>(a.Size().Height);
+}
+
+void ViewProvider::UploadFrameConstants(ID3D11DeviceContext* ctx, uint32_t frame_counter)
+{
+    auto&& d = m_frame_constants[frame_counter].Get();
+    auto&& s = &m_frame_constants_shadow[frame_counter][0];
+
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+
+    ThrowIfFailed( ctx->Map( d, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped) );
+    memcpy_s(mapped.pData, m_frame_constants_size, s, m_frame_constants_size);
+    ctx->Unmap(d,0);
+
+}
 
 int32_t __stdcall wWinMain( HINSTANCE, HINSTANCE,PWSTR, int32_t )
 {
