@@ -16,6 +16,8 @@
 #include <triangle_vertex.h>
 #include <triangle_pixel.h>
 
+#include <triangle_constants.h>
+
 
 using namespace winrt::Windows::UI::Core;
 using namespace winrt::Windows::ApplicationModel::Core;
@@ -32,7 +34,6 @@ static uint32_t align256(uint32_t v)
 {
     return (v + 255) & (~255);
 }
-
 
 struct exception : public std::exception
 {
@@ -83,7 +84,7 @@ static ComPtr<IDXGISwapChain1> CreateSwapChain(const CoreWindow& w, ID3D11Device
 
     DXGI_SWAP_CHAIN_DESC1 desc = {};
 
-    desc.BufferCount    = 2;
+    desc.BufferCount    = 3;
     desc.Format         = DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.Width          = static_cast<UINT>(w.Bounds().Width);
     desc.Height         = static_cast<UINT>(w.Bounds().Height);
@@ -220,7 +221,8 @@ class ViewProvider : public winrt::implements<ViewProvider, IFrameworkView, IFra
 
     void                                        UploadFrameConstants(ID3D11DeviceContext* ctx, uint32_t frame_counter);
     void*                                       AllocateFrameConstant(uint32_t size);
-    uint32_t                                    OffsetFrameConstant(const void* a);
+    uint32_t                                    FrameConstantOffset(const void* a);
+    uint32_t                                    FrameConstantSize(size_t s);
 };
 
 void* ViewProvider::AllocateFrameConstant(uint32_t size)
@@ -230,12 +232,17 @@ void* ViewProvider::AllocateFrameConstant(uint32_t size)
     return r;
 }
 
-uint32_t ViewProvider::OffsetFrameConstant(const void* a)
+uint32_t ViewProvider::FrameConstantOffset(const void* a)
 {
     auto e = reinterpret_cast<const uint8_t*>(a);
     auto b = reinterpret_cast<const uint8_t*>(&m_frame_constants_shadow[m_frame_counter][0]);
 
-    return (e - b) / 16;
+    return static_cast<int32_t>(e - b) / 16;
+}
+
+uint32_t ViewProvider::FrameConstantSize(size_t s)
+{
+    return (align256(static_cast<uint32_t>(s)) / 16);
 }
 
 IFrameworkView ViewProvider::CreateView()
@@ -255,18 +262,6 @@ void ViewProvider::Uninitialize()
 
 }
 
-struct frame_constants
-{
-    DirectX::XMFLOAT4X4A    m_view;
-    DirectX::XMFLOAT4X4A    m_perspective;
-};
-
-struct sphere_constants
-{
-    DirectX::XMFLOAT4A      m_sphere_radius;
-    DirectX::XMINT4         m_subdivision_count;
-};
-
 void ViewProvider::Run()
 {
     while (m_window_running)
@@ -282,6 +277,7 @@ void ViewProvider::Run()
                 float clear_value[4] = { 1.0f, 0.0f, 0.0f, 0.0f };
                 m_device_context->ClearRenderTargetView(m_swap_chain_view.Get(), clear_value);
             }
+          
 
             {
                 ID3D11RenderTargetView* views[1] = { m_swap_chain_view.Get() };
@@ -296,17 +292,17 @@ void ViewProvider::Run()
             {
                 m_device_context->RSSetState(m_rasterizer_state.Get());
 
-                D3D11_RECT r = { 0, 0, m_back_buffer_width, m_back_buffer_height };
+                D3D11_RECT r        = { 0, 0, m_back_buffer_width, m_back_buffer_height };
+
                 m_device_context->RSSetScissorRects(1, &r);
 
-
-                D3D11_VIEWPORT v;
-                v.TopLeftX = 0;
-                v.TopLeftY = 0;
-                v.MinDepth = 0.0f;
-                v.MaxDepth = 1.0f;
-                v.Width = static_cast<float>(m_back_buffer_width);
-                v.Height = static_cast<float>(m_back_buffer_height);
+                D3D11_VIEWPORT v    = {};
+                v.TopLeftX          = 0;
+                v.TopLeftY          = 0;
+                v.MinDepth          = 0.0f;
+                v.MaxDepth          = 1.0f;
+                v.Width             = static_cast<float>(m_back_buffer_width);
+                v.Height            = static_cast<float>(m_back_buffer_height);
 
                 m_device_context->RSSetViewports(1, &v);
             }
@@ -322,26 +318,41 @@ void ViewProvider::Run()
             }
 
             {
-                const int subdivision_count = 40 + 1;
-                const int vertical_segments = subdivision_count;
-                const int horizontal_segments = subdivision_count * 2;
-                const int vertex_count = (vertical_segments + 1) * (horizontal_segments + 1);
-                const int index_count = vertex_count * 3;
+                const int subdivision_count     = 40 + 1;
+                const int vertical_segments     = subdivision_count;
+                const int horizontal_segments   = subdivision_count * 2;
+                const int vertex_count          = (vertical_segments + 1) * (horizontal_segments + 1);
+                const int index_count           = vertex_count * 3;
 
-                frame_constants*  v0 = reinterpret_cast<frame_constants*> (AllocateFrameConstant(sizeof(frame_constants)));
-                sphere_constants* v1 = reinterpret_cast<sphere_constants*> (AllocateFrameConstant(sizeof(sphere_constants)));
+                frame_constants*  v0            = reinterpret_cast<frame_constants*> (AllocateFrameConstant(sizeof(frame_constants)));
+                sphere_constants* v1            = reinterpret_cast<sphere_constants*> (AllocateFrameConstant(sizeof(sphere_constants)));
 
-                DirectX::XMMATRIX perspective   = DirectX::XMMatrixIdentity();
-                DirectX::XMMATRIX view          = DirectX::XMMatrixIdentity();
+                const float PI                                  = 3.14159265358979323846264338327950288;
+                float aspect_ratio                              = static_cast<float>(m_back_buffer_width) / static_cast<float>(m_back_buffer_height);
+                float fov                                       = (2.0f * PI ) / 3.0f;
 
-                DirectX::XMStoreFloat4x4A(&v0->m_perspective, perspective);
-                DirectX::XMStoreFloat4x4A(&v0->m_view, view);
+                DirectX::XMVECTOR               camera_position = DirectX::XMVectorSet(0.0f, 0.0f, -5.0f, 1.0f);
+                DirectX::XMVECTOR               camera_look_at  = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+                DirectX::XMVECTOR               camera_up       = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+                DirectX::XMMATRIX perspective                   = DirectX::XMMatrixPerspectiveFovLH(fov, aspect_ratio, 0.1f, 100.0f);
+                DirectX::XMMATRIX view                          = DirectX::XMMatrixLookAtLH(camera_position, camera_look_at, camera_up);
 
-                DirectX::XMVECTOR   sphere      = DirectX::XMVectorSet(0.2f, 0.0f, 0.0f, 0.0f);
-                DirectX::XMVECTOR   subs        = DirectX::XMVectorSetInt(subdivision_count, 0, 0, 0);
+                DirectX::XMVECTOR               ball_position   = DirectX::XMVectorSet( 0.0f, 0.0f, 0.0f, 1 );
+                DirectX::XMMATRIX               world           = DirectX::XMMatrixTranslation(0, 0, 0);
 
+                //constant buffers
+                DirectX::XMStoreFloat4x4A(&v0->m_perspective, DirectX::XMMatrixTranspose(perspective));
+                DirectX::XMStoreFloat4x4A(&v0->m_view, DirectX::XMMatrixTranspose(view));
+                DirectX::XMStoreFloat4x4A(&v0->m_world, DirectX::XMMatrixTranspose(world));
+
+                DirectX::XMVECTOR   sphere                      = DirectX::XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+                DirectX::XMVECTOR   subs                        = DirectX::XMVectorSetInt(subdivision_count, 0, 0, 0);
+
+
+                //constant buffers
                 DirectX::XMStoreFloat4A(&v1->m_sphere_radius, sphere);
                 DirectX::XMStoreInt4A(reinterpret_cast<uint32_t*>(&v1->m_subdivision_count), subs);
+
 
                 UploadFrameConstants(m_device_context.Get(), m_frame_counter);
 
@@ -353,14 +364,14 @@ void ViewProvider::Run()
 
                 uint32_t offsets[] =
                 {
-                    OffsetFrameConstant(v0),
-                    OffsetFrameConstant(v1),
+                    FrameConstantOffset(v0),
+                    FrameConstantOffset(v1),
                 };
 
                 uint32_t counts[] =
                 {
-                    align16(8),
-                    align16(2)
+                    FrameConstantSize(sizeof(frame_constants)),
+                    FrameConstantSize(sizeof(sphere_constants)),
                 };
 
 
@@ -421,9 +432,8 @@ void ViewProvider::OnActivated(const CoreApplicationView&, const IActivatedEvent
 void ViewProvider::OnWindowSizeChanged(const CoreWindow& w, const WindowSizeChangedEventArgs& a)
 {
     ThrowIfFailed(m_swap_chain->ResizeBuffers(3, static_cast<UINT>(a.Size().Width), static_cast<UINT>(a.Size().Height), DXGI_FORMAT_R8G8B8A8_UNORM, 0));
-
-    m_back_buffer_width = static_cast<UINT>(a.Size().Width);
-    m_back_buffer_height = static_cast<UINT>(a.Size().Height);
+    m_back_buffer_width     = static_cast<UINT>(a.Size().Width);
+    m_back_buffer_height    = static_cast<UINT>(a.Size().Height);
 }
 
 void ViewProvider::UploadFrameConstants(ID3D11DeviceContext* ctx, uint32_t frame_counter)
