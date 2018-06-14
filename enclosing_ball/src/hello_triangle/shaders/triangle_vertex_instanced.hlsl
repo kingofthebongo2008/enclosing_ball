@@ -1,4 +1,5 @@
 #include "triangle_constants.h"
+
 #include "draw_sphere.hlsli"
 
 struct interpolated_value
@@ -7,13 +8,13 @@ struct interpolated_value
 };
 
 cbuffer g_frame_constants_buffer_cb  : register(b0) { frame_constants     g_frame_constants; };
-cbuffer g_sphere_constants_buffer_cb : register(b1) { sphere_constants    g_sphere_constants; };
+cbuffer g_sphere_constants_buffer_cb : register(b1) { spheres             g_sphere_constants; };
 cbuffer g_frame_constants_buffer_cb  : register(b2) { object_constants    g_object_constants; };
 
-interpolated_value main(uint v : SV_VERTEXID)
+interpolated_value main(uint v : SV_VERTEXID, uint instance : SV_INSTANCEID)
 {
     interpolated_value r;
-    r.m_position                    = compute_sphere_position( g_sphere_constants, v );
+    r.m_position                    = compute_sphere_position( g_sphere_constants.m_spheres[instance], v );
 
     float4x4 view                   = get_view(g_frame_constants);
     float4x4 perspective            = get_perspective(g_frame_constants);

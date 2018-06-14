@@ -217,7 +217,7 @@ class ViewProvider : public winrt::implements<ViewProvider, IFrameworkView, IFra
     uint32_t                                    m_frame_counter = 0;
     uint32_t                                    m_frame_pointer = 0;
 
-    const uint32_t                              m_frame_constants_size = 512;
+    const uint32_t                              m_frame_constants_size = 128 * 1024;
 
     void                                        UploadFrameConstants(ID3D11DeviceContext* ctx, uint32_t frame_counter);
     void*                                       AllocateFrameConstant(uint32_t size);
@@ -324,8 +324,9 @@ void ViewProvider::Run()
                 const int vertex_count          = (vertical_segments + 1) * (horizontal_segments + 1);
                 const int index_count           = vertex_count * 3;
 
-                frame_constants*  v0            = reinterpret_cast<frame_constants*> (AllocateFrameConstant(sizeof(frame_constants)));
-                sphere_constants* v1            = reinterpret_cast<sphere_constants*> (AllocateFrameConstant(sizeof(sphere_constants)));
+                frame_constants*  v0                            = reinterpret_cast<frame_constants*> (AllocateFrameConstant(sizeof(frame_constants)));
+                sphere_constants* v1                            = reinterpret_cast<sphere_constants*> (AllocateFrameConstant(sizeof(sphere_constants)));
+                object_constants* v2                            = reinterpret_cast<object_constants*> (AllocateFrameConstant(sizeof(object_constants)));
 
                 const float PI                                  = 3.14159265358979323846264338327950288;
                 float aspect_ratio                              = static_cast<float>(m_back_buffer_width) / static_cast<float>(m_back_buffer_height);
@@ -343,21 +344,17 @@ void ViewProvider::Run()
                 //constant buffers
                 DirectX::XMStoreFloat4x4A(&v0->m_perspective, DirectX::XMMatrixTranspose(perspective));
                 DirectX::XMStoreFloat4x4A(&v0->m_view, DirectX::XMMatrixTranspose(view));
-                DirectX::XMStoreFloat4x4A(&v0->m_world, DirectX::XMMatrixTranspose(world));
-
-                DirectX::XMVECTOR   sphere                      = DirectX::XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
-                DirectX::XMVECTOR   subs                        = DirectX::XMVectorSetInt(subdivision_count, 0, 0, 0);
-
+                DirectX::XMVECTOR   sphere                      = DirectX::XMVectorSet(1.0f, static_cast<float>(subdivision_count), 0.0f, 0.0f);
 
                 //constant buffers
-                DirectX::XMStoreFloat4A(&v1->m_sphere_radius, sphere);
-                DirectX::XMStoreInt4A(reinterpret_cast<uint32_t*>(&v1->m_subdivision_count), subs);
-
+                DirectX::XMStoreFloat4A(&v1->m_sphere_parameters, sphere);
+                DirectX::XMStoreFloat4x4A(&v2->m_world, DirectX::XMMatrixTranspose(world));
 
                 UploadFrameConstants(m_device_context.Get(), m_frame_counter);
 
                 ID3D11Buffer* buffers[] =
                 {
+                    m_frame_constants[m_frame_counter].Get(),
                     m_frame_constants[m_frame_counter].Get(),
                     m_frame_constants[m_frame_counter].Get()
                 };
@@ -366,16 +363,17 @@ void ViewProvider::Run()
                 {
                     FrameConstantOffset(v0),
                     FrameConstantOffset(v1),
+                    FrameConstantOffset(v2),
                 };
 
                 uint32_t counts[] =
                 {
                     FrameConstantSize(sizeof(frame_constants)),
                     FrameConstantSize(sizeof(sphere_constants)),
+                    FrameConstantSize(sizeof(object_constants)),
                 };
 
-
-                m_device_context->VSSetConstantBuffers1(0, 2, buffers, &offsets[0], &counts[0]);
+                m_device_context->VSSetConstantBuffers1(0, 3, buffers, &offsets[0], &counts[0]);
                 m_device_context->Draw(index_count, 0);
             }
         }
@@ -397,13 +395,13 @@ void ViewProvider::Load(winrt::hstring h)
     m_rasterizer_state = CreateRasterizerState(m_device.Get());
     m_depth_stencil_state = CreateDepthStencilState(m_device.Get());
 
-    m_frame_constants[0] = CreateFrameConstantsBuffer(m_device.Get(), 512);
-    m_frame_constants[1] = CreateFrameConstantsBuffer(m_device.Get(), 512);
-    m_frame_constants[2] = CreateFrameConstantsBuffer(m_device.Get(), 512);
+    m_frame_constants[0] = CreateFrameConstantsBuffer(m_device.Get(), m_frame_constants_size);
+    m_frame_constants[1] = CreateFrameConstantsBuffer(m_device.Get(), m_frame_constants_size);
+    m_frame_constants[2] = CreateFrameConstantsBuffer(m_device.Get(), m_frame_constants_size);
 
-    m_frame_constants_shadow[0] = std::vector<uint8_t>(512);
-    m_frame_constants_shadow[1] = std::vector<uint8_t>(512);
-    m_frame_constants_shadow[2] = std::vector<uint8_t>(512);
+    m_frame_constants_shadow[0] = std::vector<uint8_t>(m_frame_constants_size);
+    m_frame_constants_shadow[1] = std::vector<uint8_t>(m_frame_constants_size);
+    m_frame_constants_shadow[2] = std::vector<uint8_t>(m_frame_constants_size);
 
     m_frame_counter = 0;
 }
