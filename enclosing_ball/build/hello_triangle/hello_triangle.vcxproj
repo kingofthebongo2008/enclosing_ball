@@ -74,7 +74,18 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\src\hello_triangle\invert_3x3_c.h" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix22.h" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix22.hpp" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix33.h" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix33.hpp" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix44.h" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix44.hpp" />
     <ClInclude Include="..\..\src\hello_triangle\pch.h" />
+    <ClInclude Include="..\..\src\hello_triangle\vector2.h" />
+    <ClInclude Include="..\..\src\hello_triangle\vector2.hpp" />
+    <ClInclude Include="..\..\src\hello_triangle\vector3.h" />
+    <ClInclude Include="..\..\src\hello_triangle\vector3.hpp" />
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="package.appxmanifest">
@@ -112,7 +123,6 @@
       <HeaderFileOutput>$(IntermediateOutputPath)%(Filename).h</HeaderFileOutput>
       <ObjectFileOutput />
     </FxCompile>
-
     <FxCompile Include="..\..\src\hello_triangle\shaders\triangle_vertex_instanced.hlsl">
       <ShaderType>Vertex</ShaderType>
       <ShaderModel>5.0</ShaderModel>
@@ -120,7 +130,6 @@
       <HeaderFileOutput>$(IntermediateOutputPath)%(Filename).h</HeaderFileOutput>
       <ObjectFileOutput />
     </FxCompile>
-
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -496,11 +496,15 @@ void ViewProvider::UploadFrameConstants(ID3D11DeviceContext* ctx, uint32_t frame
     ThrowIfFailed( ctx->Map( d, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped) );
     memcpy_s(mapped.pData, m_frame_constants_size, s, m_frame_constants_size);
     ctx->Unmap(d,0);
-
+}
+namespace computational_geometry
+{
+    void test2();
 }
 
 int32_t __stdcall wWinMain( HINSTANCE, HINSTANCE,PWSTR, int32_t )
 {
+    computational_geometry::test2();
     ThrowIfFailed(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
     CoreApplication::Run(ViewProvider());
     CoUninitialize();

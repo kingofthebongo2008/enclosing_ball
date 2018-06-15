@@ -17,7 +17,14 @@ namespace computational_geometry
         float  m_radius = 0.0f;;
     };
 
+    struct point3_soa
+    {
+        std::vector<float> m_x;
+        std::vector<float> m_y;
+        std::vector<float> m_z;
+    };
 
-    sphere enclosing_ball(const std::vector<point3>& points);
+
+    sphere enclosing_ball(point3_soa& points);
 
 }

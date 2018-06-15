@@ -15,9 +15,21 @@
   <ItemGroup>
     <ClCompile Include="..\..\src\hello_triangle\main.cpp" />
     <ClCompile Include="..\..\src\hello_triangle\pch.cpp" />
+    <ClCompile Include="..\..\src\hello_triangle\enclosing_ball.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\src\hello_triangle\pch.h" />
+    <ClInclude Include="..\..\src\hello_triangle\invert_3x3_c.h" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix33.h" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix33.hpp" />
+    <ClInclude Include="..\..\src\hello_triangle\vector3.h" />
+    <ClInclude Include="..\..\src\hello_triangle\vector3.hpp" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix44.h" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix44.hpp" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix22.h" />
+    <ClInclude Include="..\..\src\hello_triangle\matrix22.hpp" />
+    <ClInclude Include="..\..\src\hello_triangle\vector2.h" />
+    <ClInclude Include="..\..\src\hello_triangle\vector2.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="assets\lock_screen_logo.scale-200.png">

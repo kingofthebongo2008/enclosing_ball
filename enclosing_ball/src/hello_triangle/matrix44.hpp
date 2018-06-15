@@ -1,0 +1,3 @@
+namespace computational_geometry
+{
+}
